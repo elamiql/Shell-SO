@@ -88,14 +88,31 @@ void read_input(char* buffer){
 
     disable_raw_mode();
 }
+
+void print_prompt(){
+    char *cwd = malloc(1024);
+    char hostname[256];
+    gethostname(hostname, sizeof(hostname));
+
+    if (getcwd(cwd, 1024) != NULL){
+        printf("\033[1;32m%s@%s\033[0m:\033[1;36m%s\033[0m$ ",
+               getenv("USER"),hostname, cwd);
+    }
+    else{
+        perror("getcwd");
+    }
+
+    free(cwd);
+    fflush(stdout);
+}
+
 int main() {
     
     char input[MAX_INPUT];
     char* args[MAX_ARGS];
 
     while(1){
-        printf("tsh$ ");
-        fflush(stdout);
+        print_prompt();
 
         read_input(input);
 
