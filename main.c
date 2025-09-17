@@ -4,86 +4,14 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <termios.h>
+#include <ctype.h>
 #include "history.h"
 #include "input.h"
-
-#define MAX_PIPE_CMDS 16
-
-int parsePipe(char* input, char** cmds, int max_cmds){
-    int n = 0;
-    char* cmd;
-
-    while ((cmd = strsep(&input, "|")) != NULL && n < max_cmds){
-        while (*cmd == ' ') cmd++;
-        cmds[n++] = cmd;
-    }
-    return n;
-}
-
-int parseArgs(char* cmd, char** args){
-    int i = 0;
-    char* token = strtok(cmd, " ");
-    while (token != NULL && i < MAX_ARGS - 1){
-        args[i++] = token;
-        token = strtok(NULL, " ");
-    }
-    args[i] = NULL;
-    return i;
-}
-
-void execPipes(char** cmds, int n){
-    int i;
-    int in_fd = 0;
-    pid_t pid;
-
-    int pipefd[2];
-
-    for (i = 0; i < n; i++){
-        char* args[MAX_ARGS];
-        parseArgs(cmds[i], args);
-
-        if (i<n-1) pipe(pipefd);
-
-        pid = fork();
-
-        if (pid == 0){
-            if (in_fd != 0){
-                dup2(in_fd, STDIN_FILENO);
-                close(in_fd);
-            }
-
-            if (i<n-1){
-                close(pipefd[0]);
-                dup2(pipefd[1], STDOUT_FILENO);
-                close(pipefd[1]);
-            }
-            execvp(args[0], args);
-            fprintf(stderr, "%s: comando no encontrado\n", args[0]);
-            exit(EXIT_FAILURE);
-        }
-        else{
-            if (in_fd != 0) close(in_fd);
-            if (i<n-1){
-                close(pipefd[1]);
-                in_fd = pipefd[0];
-            }
-        }
-    }
-
-    for (i = 0; i < n; i++) wait(NULL);
-}
-
-
-
-
-
-
-
+#include "pipes.h"
 
 int main() {
     
     char input[MAX_INPUT];
-    char* args[MAX_ARGS];
     char* cmds[MAX_PIPE_CMDS];
 
     while(1){
@@ -107,29 +35,28 @@ int main() {
 
         int n = parsePipe(input, cmds, 16);
 
-        if (n>1){
+        if (n>0){
             execPipes(cmds, n);
+            free_pipe_cmds(cmds, n);
             continue;
         }
 
-        char* token = strtok(input, " ");
-
-        int i = 0;
-
-        while(token != NULL && i < MAX_ARGS){
-            args[i++] = token;
-            token = strtok(NULL, " ");
+        char** args = parse_command(input);
+        if (args[0] == NULL) {
+            free_args(args);
+            continue;
         }
-
-        args[i] = NULL;
 
         if (strcmp(args[0], "cd") == 0){
             if (args[1] == NULL){
                 perror("cd: Faltan argumentos");
+                free_args(args);
             }
             else if(chdir(args[1]) != 0){
                 perror("cd failed");
+                free_args(args);
             }
+            free_args(args);
             continue;
         }
 
@@ -138,6 +65,7 @@ int main() {
         if (pid == 0){
             execvp(args[0], args);
             fprintf(stderr, "%s: comando no encontrado\n", args[0]);
+            free_args(args);
             exit(EXIT_FAILURE);
         }else if(pid > 0){
             int status;
@@ -148,6 +76,6 @@ int main() {
             perror("fork failed");
         }
 
+        free_args(args);
     }
-
 }
