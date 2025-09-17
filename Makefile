@@ -2,7 +2,7 @@ CC = gcc
 
 CFLAGS = -Wall -g
 
-OBJ = main.o history.o
+OBJ = main.o history.o input.o
 
 TARGET = myshell
 

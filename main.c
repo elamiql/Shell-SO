@@ -5,115 +5,89 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include "history.h"
+#include "input.h"
 
-#define MAX_INPUT 1024
-#define MAX_ARGS 64
+#define MAX_PIPE_CMDS 16
 
-static struct termios orig_termios;
+int parsePipe(char* input, char** cmds, int max_cmds){
+    int n = 0;
+    char* cmd;
 
-void disable_raw_mode(){
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+    while ((cmd = strsep(&input, "|")) != NULL && n < max_cmds){
+        while (*cmd == ' ') cmd++;
+        cmds[n++] = cmd;
+    }
+    return n;
 }
 
-void enable_raw_mode(){
-    tcgetattr(STDIN_FILENO, &orig_termios);
-    atexit(disable_raw_mode);
-
-    struct termios raw = orig_termios;
-
-    raw.c_lflag &= ~(ECHO | ICANON);
-    raw.c_cc[VMIN] = 1;
-    raw.c_cc[VTIME] = 0;
-
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+int parseArgs(char* cmd, char** args){
+    int i = 0;
+    char* token = strtok(cmd, " ");
+    while (token != NULL && i < MAX_ARGS - 1){
+        args[i++] = token;
+        token = strtok(NULL, " ");
+    }
+    args[i] = NULL;
+    return i;
 }
 
-void read_input(char* buffer){
-    int len = 0;
-    buffer[len] = '\0';
+void execPipes(char** cmds, int n){
+    int i;
+    int in_fd = 0;
+    pid_t pid;
 
-    enable_raw_mode();
+    int pipefd[2];
 
-    char c;
+    for (i = 0; i < n; i++){
+        char* args[MAX_ARGS];
+        parseArgs(cmds[i], args);
 
-    while (read(STDIN_FILENO, &c, 1) == 1){
-        if (c == '\n'){
-            buffer[len] = '\0';
-            printf("\n");
-            break;
-        }else if (c == 127 || c == '\b'){
-            if (len > 0){
-                len--;
-                buffer[len] = '\0';
-                printf("\b \b");
-                fflush(stdout);
+        if (i<n-1) pipe(pipefd);
+
+        pid = fork();
+
+        if (pid == 0){
+            if (in_fd != 0){
+                dup2(in_fd, STDIN_FILENO);
+                close(in_fd);
             }
-        }else if (c == 27){
-            char seq[2];
-            if (read(STDIN_FILENO, &seq[0], 1) == 1 && read(STDIN_FILENO, &seq[1], 1)){
-                if (seq[0] == '['){
-                    if (seq[1] == 'A'){
-                        const char* prevCmd = get_history_up();
-                        if (prevCmd){
-                            for (int i = 0; i < len; i++) printf("\b \b");
-                            len = snprintf(buffer, MAX_INPUT, "%s", prevCmd);
-                            printf("%s", buffer);
-                            fflush(stdout);
-                        }
-                    } else if (seq[1] == 'B'){
-                        const char* nextCmd = get_history_down();
-                            for (int i = 0; i < len; i++) printf("\b \b");
-                            if (nextCmd){
-                                len = snprintf(buffer, MAX_INPUT, "%s", nextCmd);
-                                printf("%s", buffer);
-                                fflush(stdout);                          
-                            }
-                            else{
-                                len = 0;
-                                buffer[len] = '\0';
-                                fflush(stdout);
-                            }
-                    }
-                }
 
+            if (i<n-1){
+                close(pipefd[0]);
+                dup2(pipefd[1], STDOUT_FILENO);
+                close(pipefd[1]);
             }
+            execvp(args[0], args);
+            fprintf(stderr, "%s: comando no encontrado\n", args[0]);
+            exit(EXIT_FAILURE);
         }
         else{
-            if (len < MAX_INPUT - 1){
-                buffer[len++] = c;
-                write(STDOUT_FILENO, &c, 1);
+            if (in_fd != 0) close(in_fd);
+            if (i<n-1){
+                close(pipefd[1]);
+                in_fd = pipefd[0];
             }
         }
     }
 
-    disable_raw_mode();
+    for (i = 0; i < n; i++) wait(NULL);
 }
 
-void print_prompt(){
-    char *cwd = malloc(1024);
-    char hostname[256];
-    gethostname(hostname, sizeof(hostname));
 
-    if (getcwd(cwd, 1024) != NULL){
-        printf("\033[1;32m%s@%s\033[0m:\033[1;36m%s\033[0m$ ",
-               getenv("USER"),hostname, cwd);
-    }
-    else{
-        perror("getcwd");
-    }
 
-    free(cwd);
-    fflush(stdout);
-}
+
+
+
+
 
 int main() {
     
     char input[MAX_INPUT];
     char* args[MAX_ARGS];
+    char* cmds[MAX_PIPE_CMDS];
 
     while(1){
         print_prompt();
-
         read_input(input);
 
         if (strlen(input) == 0) continue;
@@ -128,6 +102,13 @@ int main() {
 
         if (strcmp(input, "print_history") == 0){
             print_history();
+            continue;
+        }
+
+        int n = parsePipe(input, cmds, 16);
+
+        if (n>1){
+            execPipes(cmds, n);
             continue;
         }
 
@@ -156,7 +137,7 @@ int main() {
         
         if (pid == 0){
             execvp(args[0], args);
-            perror("excecvp failed");
+            fprintf(stderr, "%s: comando no encontrado\n", args[0]);
             exit(EXIT_FAILURE);
         }else if(pid > 0){
             int status;
