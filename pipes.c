@@ -15,6 +15,11 @@ int is_special_char(char c){
 }
 
 int parsePipe(char* input, char** cmds, int max_cmds){
+
+    if (strchr(input, '|') == NULL){
+        return 0;
+    }
+
     int n = 0;
     char* cmd;
     char* input_copy = strdup(input);

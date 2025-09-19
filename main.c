@@ -50,11 +50,9 @@ int main() {
         if (strcmp(args[0], "cd") == 0){
             if (args[1] == NULL){
                 perror("cd: Faltan argumentos");
-                free_args(args);
             }
             else if(chdir(args[1]) != 0){
                 perror("cd failed");
-                free_args(args);
             }
             free_args(args);
             continue;
@@ -71,7 +69,7 @@ int main() {
             int status;
             waitpid(pid, &status, 0);
             printf("Exist status: %d\n", status);
-
+            
         }else{
             perror("fork failed");
         }
