@@ -93,7 +93,7 @@ void print_prompt(){
     gethostname(hostname, sizeof(hostname));
 
     if (getcwd(cwd, 1024) != NULL){
-        printf("\033[1;32m%s@%s\033[0m:\033[1;36m%s\033[0m$ ",
+        printf("\033[1;32m%s@%s\033[0m:\033[1;36m%s\033[0m$ SCHELL: ",
                getenv("USER"),hostname, cwd);
     }
     else{
