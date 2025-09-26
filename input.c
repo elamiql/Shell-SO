@@ -39,14 +39,16 @@ void read_input(char* buffer){
             buffer[len] = '\0';
             printf("\n");
             break;
-        }else if (c == 127 || c == '\b'){
+        }
+        else if (c == 127 || c == '\b'){
             if (len > 0){
                 len--;
                 buffer[len] = '\0';
                 printf("\b \b");
                 fflush(stdout);
             }
-        }else if (c == 27){
+        }
+        else if (c == 27){
             char seq[2];
             if (read(STDIN_FILENO, &seq[0], 1) == 1 && read(STDIN_FILENO, &seq[1], 1) == 1){
                 if (seq[0] == '['){
@@ -58,7 +60,8 @@ void read_input(char* buffer){
                             printf("%s", buffer);
                             fflush(stdout);
                         }
-                    } else if (seq[1] == 'B'){
+                    } 
+                    else if (seq[1] == 'B'){
                         const char* nextCmd = get_history_down();
                             for (int i = 0; i < len; i++) printf("\b \b");
                             if (nextCmd){
