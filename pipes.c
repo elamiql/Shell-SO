@@ -9,11 +9,12 @@
 #include "input.h"
 #include "pipes.h"
 
-
+// verifica si un caracter es especial (pipes o redirecciones)
 int is_special_char(char c){
     return c == '|' || c == '>' || c == '<';
 }
 
+//divide la entrada en comandos separados por pipes
 int parsePipe(char* input, char** cmds, int max_cmds){
 
     if (strchr(input, '|') == NULL){
@@ -26,16 +27,17 @@ int parsePipe(char* input, char** cmds, int max_cmds){
     char* input_ptr = input_copy;
 
     while ((cmd = strsep(&input_copy, "|")) != NULL && n < max_cmds){
-        while (*cmd == ' ') cmd++;
+        while (*cmd == ' ') cmd++; //eliminar espacios iniciales
         char* end = cmd + strlen(cmd) - 1;
-        while (end > cmd && isspace(*end)) end--;
+        while (end > cmd && isspace(*end)) end--; //eliminar espacios finales
         *(end + 1) = '\0';
-        cmds[n++] = strdup(cmd);
+        cmds[n++] = strdup(cmd); //guardar comando
     }
     free(input_ptr);
-    return n;
+    return n; //cantidad de comandos
 }
 
+//separa un comando en argumentos
 char** parse_command(char* line){
     char** argv = malloc(sizeof(char*) * MAX_TOKENS);
     int argc = 0;
@@ -43,12 +45,13 @@ char** parse_command(char* line){
     int len = strlen(line);
 
     while (i < len){
-        while (isspace(line[i])) i++;
+        while (isspace(line[i])) i++; //saltar espacios
         if (i>len) break;
 
         char token[1024];
         int pos = 0;
 
+        //manejar comillas
         if (line[i] == '\'' || line[i] == '"'){
             char quote = line[i++];
             while (i<len && line[i] != quote){
@@ -56,10 +59,10 @@ char** parse_command(char* line){
             }
             if (i<len) i++;
         }
-        else if(is_special_char(line[i])){
+        else if(is_special_char(line[i])){ //token especial 
             token[pos++] = line[i++];
         }
-        else{
+        else{ //token normal
             while (i<len && !isspace(line[i]) && !is_special_char(line[i])){
                 token[pos++] = line[i++];
             }
@@ -74,7 +77,7 @@ char** parse_command(char* line){
     return argv;
 }
 
-
+// ejecuta una serie de comandos conectados por pipes
 void execPipes(char** cmds, int n){
     int i;
     int in_fd = 0;
@@ -91,7 +94,7 @@ void execPipes(char** cmds, int n){
             continue;
         }
         
-        if (i<n-1) {
+        if (i<n-1) { // crear pipe si no es el ultimo comando
             if (pipe(pipefd) == -1){
                 perror("pipe failed");
                 free_args(args);
@@ -102,27 +105,27 @@ void execPipes(char** cmds, int n){
         pid = fork();
         pids[i] = pid;
         
-        if (pid == 0){
+        if (pid == 0){ // hijo
             if (in_fd != 0){
                 dup2(in_fd, STDIN_FILENO);
                 close(in_fd);
             }
             
-            if (i<n-1){
+            if (i<n-1){ // si no es el ultimo, redirigir salida al pipe
                 close(pipefd[0]);
                 dup2(pipefd[1], STDOUT_FILENO);
                 close(pipefd[1]);
             }
-            execvp(args[0], args);
+            execvp(args[0], args); //ejecutar comando
             fprintf(stderr, "%s: comando no encontrado\n", args[0]);
             free_args(args);
             exit(EXIT_FAILURE);
         }
-        else if (pid > 0){
+        else if (pid > 0){ //padre
             if (in_fd != 0) close(in_fd);
             if (i < n-1){
                 close(pipefd[1]);
-                in_fd = pipefd[0];
+                in_fd = pipefd[0]; //entrada al siguiente comando
             }
         }
         else{
@@ -133,6 +136,7 @@ void execPipes(char** cmds, int n){
         
         free_args(args);
     }
+    //esperar a todos los hijos
     for (int i = 0; i<n; i++){
         if (pids[i] > 0){
             int status;
@@ -141,6 +145,7 @@ void execPipes(char** cmds, int n){
     }
 }
 
+//libera memoria de los argumentos
 void free_args(char** args){
     if (args){
         for (int i=0; args[i]; i++){
@@ -150,6 +155,7 @@ void free_args(char** args){
     }
 }
 
+//libera memoria de los comandos de pipe
 void free_pipe_cmds(char** cmds, int n){
     for (int i=0; i<n; i++){
         if (cmds[i]){

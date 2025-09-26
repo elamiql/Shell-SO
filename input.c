@@ -7,25 +7,28 @@
 #include <stdlib.h>
 
 
-static struct termios orig_termios;
+static struct termios orig_termios; //guarda configuracion inicial de la terminal 
 
+//restaura la terminal a su estado original 
 void disable_raw_mode(){
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
 }
 
+//habilita modo raw para lectura caracter a caracter
 void enable_raw_mode(){
     tcgetattr(STDIN_FILENO, &orig_termios);
-    atexit(disable_raw_mode);
+    atexit(disable_raw_mode); //asegurarse de restaurar al salir
 
     struct termios raw = orig_termios;
 
-    raw.c_lflag &= ~(ECHO | ICANON);
-    raw.c_cc[VMIN] = 1;
-    raw.c_cc[VTIME] = 0;
+    raw.c_lflag &= ~(ECHO | ICANON); // desactivar eco y modo canon
+    raw.c_cc[VMIN] = 1; // leer minimo un caracter
+    raw.c_cc[VTIME] = 0; // sin timeout
 
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
+//lee la entrada del usuario caracter por caracter
 void read_input(char* buffer){
     int len = 0;
     buffer[len] = '\0';
@@ -35,24 +38,24 @@ void read_input(char* buffer){
     char c;
 
     while (read(STDIN_FILENO, &c, 1) == 1){
-        if (c == '\n'){
+        if (c == '\n'){ // enter
             buffer[len] = '\0';
             printf("\n");
             break;
         }
-        else if (c == 127 || c == '\b'){
+        else if (c == 127 || c == '\b'){ //backspace
             if (len > 0){
                 len--;
                 buffer[len] = '\0';
-                printf("\b \b");
+                printf("\b \b"); //borra caracter en pantalla
                 fflush(stdout);
             }
         }
-        else if (c == 27){
+        else if (c == 27){ // secuencias de escape (flechas)
             char seq[2];
             if (read(STDIN_FILENO, &seq[0], 1) == 1 && read(STDIN_FILENO, &seq[1], 1) == 1){
                 if (seq[0] == '['){
-                    if (seq[1] == 'A'){
+                    if (seq[1] == 'A'){ //flecha arriba
                         const char* prevCmd = get_history_up();
                         if (prevCmd){
                             for (int i = 0; i < len; i++) printf("\b \b");
@@ -61,7 +64,7 @@ void read_input(char* buffer){
                             fflush(stdout);
                         }
                     } 
-                    else if (seq[1] == 'B'){
+                    else if (seq[1] == 'B'){ //flecha abajo
                         const char* nextCmd = get_history_down();
                             for (int i = 0; i < len; i++) printf("\b \b");
                             if (nextCmd){
@@ -79,7 +82,7 @@ void read_input(char* buffer){
 
             }
         }
-        else{
+        else{ // caracter normal 
             if (len < MAX_INPUT - 1){
                 buffer[len++] = c;
                 write(STDOUT_FILENO, &c, 1);
@@ -87,9 +90,10 @@ void read_input(char* buffer){
         }
     }
 
-    disable_raw_mode();
+    disable_raw_mode(); // restaurar terminal 
 }
 
+// imprime el prompt personalizado con colores y directorio
 void print_prompt(){
     char *cwd = malloc(1024);
     char hostname[256];

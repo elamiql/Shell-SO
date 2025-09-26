@@ -4,11 +4,9 @@
 #define MAX_INPUT 1024
 #define MAX_ARGS 64
 
-void enable_raw_mode();
-void disable_raw_mode();
-
 void read_input(char* buffer);
-
-void print_prompt();
+void print_prompt(void);
+void enable_raw_mode(void);
+void disable_raw_mode(void);
 
 #endif
