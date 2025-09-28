@@ -86,6 +86,8 @@ int main(){
             int save = 0;        //flag para guardar la salida del archivo
             char *filename = NULL;
             int cmd_index = 2; // índice del comando a ejecutar
+            int use_timer = 0;   // flag para límite de tiempo
+            int maxtiempo = 0;
 
             // miprof ejec: ejecuta y muestra resultados
             if (strcmp(args[1], "ejec") == 0){
@@ -111,70 +113,37 @@ int main(){
                     continue;
                 }
 
-                int maxtiempo = atoi(args[2]);
+                maxtiempo = atoi(args[2]);
                 if (maxtiempo <= 0){
                     fprintf(stderr, "El tiempo máximo debe ser mayor a 0.\n");
                     free_args(args);
                     continue;
                 }
-
-                int cmd_index = 3;
-                struct rusage usage;
-                struct timespec start, end;
-                clock_gettime(CLOCK_MONOTONIC, &start);
-
-                child_pid = fork();
-                if (child_pid == 0){
-                    execvp(args[cmd_index], &args[cmd_index]); // ejecutar comando
-                    perror("execvp falló");
-                    exit(EXIT_FAILURE);
-                }
-                else if (child_pid > 0){
-                    signal(SIGALRM, alarma); //activar alarma
-                    alarm(maxtiempo);
-
-                    int status;
-                    wait4(child_pid, &status, 0, &usage); //esperar proceso
-
-                    clock_gettime(CLOCK_MONOTONIC, &end);
-
-                    double real_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-
-                    //reporte de recursos
-                    printf("\n--- Resultados miprof ejecutar ---\n");
-                    if (WIFEXITED(status)){
-                        printf("Exit code: %d\n", WEXITSTATUS(status));
-                    }
-                    else if (WIFSIGNALED(status)){
-                        printf("Terminado por señal %d\n", WTERMSIG(status));
-                    }
-
-                    printf("Tiempo real: %.3f s\n", real_time);
-                    printf("Tiempo usuario: %.3f s\n",
-                           usage.ru_utime.tv_sec + usage.ru_utime.tv_usec / 1e6);
-                    printf("Tiempo sistema: %.3f s\n",
-                           usage.ru_stime.tv_sec + usage.ru_stime.tv_usec / 1e6);
-                    printf("Memoria máxima residente: %ld KB\n", usage.ru_maxrss);
-
-                    alarm(0); //desactivar alarma
-                }
-                else{
-                    perror("fork falló");
-                }
-
-                free_args(args);
-                continue;
+                
+                use_timer = 1;
+                cmd_index = 3;
             }
-
             else{
                 fprintf(stderr, "Opción inválida: %s\n", args[1]);
                 free_args(args);
                 continue;
             }
 
-            // ejecucion normal de miprof (ejec o ejecsave)
-            pid_t pid = fork();
-            if (pid == 0){
+            // Verificar que hay comando a ejecutar
+            if (args[cmd_index] == NULL){
+                fprintf(stderr, "Falta especificar el comando a ejecutar.\n");
+                free_args(args);
+                continue;
+            }
+
+            // EJECUCIÓN COMÚN CON MEDICIÓN DE RECURSOS
+            struct rusage usage;
+            struct timespec start, end;
+            clock_gettime(CLOCK_MONOTONIC, &start);
+
+            child_pid = fork();
+            if (child_pid == 0){
+                // Configurar redirección si es necesario
                 if (save){
                     FILE *f = fopen(filename, "a");
                     if (!f){
@@ -185,14 +154,48 @@ int main(){
                     dup2(fileno(f), STDERR_FILENO); // redirigir stderr
                     fclose(f);
                 }
-                execvp(args[cmd_index], &args[cmd_index]);
+                
+                execvp(args[cmd_index], &args[cmd_index]); // ejecutar comando
                 perror("execvp falló");
                 exit(EXIT_FAILURE);
             }
-            else if (pid > 0){
+            else if (child_pid > 0){
+                // Configurar alarma solo si es necesario
+                if (use_timer){
+                    signal(SIGALRM, alarma);
+                    alarm(maxtiempo);
+                }
+
                 int status;
-                waitpid(pid, &status, 0);
-                printf("Exit status: %d\n", status);
+                wait4(child_pid, &status, 0, &usage); //esperar proceso y obtener recursos
+
+                clock_gettime(CLOCK_MONOTONIC, &end);
+                double real_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
+                // Desactivar alarma si se usó
+                if (use_timer){
+                    alarm(0);
+                }
+
+                //reporte de recursos (SIEMPRE se muestra)
+                printf("\n--- Resultados miprof %s ---\n", args[1]);
+                if (WIFEXITED(status)){
+                    printf("Exit code: %d\n", WEXITSTATUS(status));
+                }
+                else if (WIFSIGNALED(status)){
+                    printf("Terminado por señal %d\n", WTERMSIG(status));
+                }
+
+                printf("Tiempo real: %.3f s\n", real_time);
+                printf("Tiempo usuario: %.3f s\n",
+                       usage.ru_utime.tv_sec + usage.ru_utime.tv_usec / 1e6);
+                printf("Tiempo sistema: %.3f s\n",
+                       usage.ru_stime.tv_sec + usage.ru_stime.tv_usec / 1e6);
+                printf("Memoria máxima residente: %ld KB\n", usage.ru_maxrss);
+
+                if (save){
+                    printf("Salida guardada en: %s\n", filename);
+                }
             }
             else{
                 perror("fork falló");
@@ -202,7 +205,7 @@ int main(){
             continue;
         }
 
-        // ejecucion de comandos internos
+        // ejecucion de comandos externos
         pid_t pid = fork();
 
         if (pid == 0){
@@ -222,4 +225,6 @@ int main(){
 
         free_args(args); //liberar memoria
     }
+
+    return 0;
 }
